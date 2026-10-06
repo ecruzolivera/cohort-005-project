@@ -16,7 +16,6 @@ import {
 } from "~/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { parseFormData, parseParams } from "~/lib/validation";
-import { getDiscountForCountry } from "~/lib/ppp";
 import { formatPrice } from "~/lib/utils";
 
 const REFUND_REQUEST_WINDOW_DAYS = 14;
@@ -30,7 +29,7 @@ const refundRequestActionSchema = z.object({
   reason: z
     .string()
     .trim()
-    .min(10, "Tell us a little more about why you are requesting a refund.")
+    .min(10, "Tell us a little more about why you want a refund.")
     .max(1000, "Please keep your reason under 1000 characters."),
 });
 
@@ -58,14 +57,14 @@ function getLessonIdsForCourse(courseId: number): number[] {
   return rows.map((row) => row.id);
 }
 
-function getPendingRefundRequest(purchaseId: number) {
+function getOpenRefundRequest(purchaseId: number) {
   return db
     .select()
     .from(refundRequests)
     .where(
       and(
         eq(refundRequests.purchaseId, purchaseId),
-        eq(refundRequests.status, RefundRequestStatus.Requested)
+        eq(refundRequests.status, RefundRequestStatus.Open)
       )
     )
     .get();
@@ -141,13 +140,10 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data("You have not bought this course.", { status: 403 });
   }
 
-  if (getPendingRefundRequest(purchase.id)) {
-    throw data(
-      "You already have a refund request under review for this purchase.",
-      {
-        status: 409,
-      }
-    );
+  if (getOpenRefundRequest(purchase.id)) {
+    throw data("You already have an open refund request on this purchase.", {
+      status: 409,
+    });
   }
 
   // A seat that came out of a team licence, and has been claimed, belongs to
@@ -161,9 +157,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     .get();
 
   if (claimedSeat) {
-    throw data("A refund cannot be requested for a claimed team seat.", {
-      status: 403,
-    });
+    throw data("A claimed team seat cannot be refunded.", { status: 403 });
   }
 
   const today = calendarDay(new Date());
@@ -204,18 +198,10 @@ export async function action({ params, request }: Route.ActionArgs) {
   }
 
   if (watchedSeconds >= MAX_WATCHED_HOURS * 60 * 60) {
-    throw data(
-      "You have watched too much of this course to request a refund.",
-      {
-        status: 403,
-      }
-    );
+    throw data("You have watched too much of this course to request a refund.", {
+      status: 403,
+    });
   }
-
-  // A purchase made at a purchasing-power price is given back at that price,
-  // not at the list price of the course.
-  const pppDiscount = getDiscountForCountry(purchase.country);
-  const refundableAmount = pppDiscount > 0 ? purchase.amountPaid : course.price;
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, refundRequestActionSchema);
@@ -227,7 +213,7 @@ export async function action({ params, request }: Route.ActionArgs) {
   db.insert(refundRequests)
     .values({
       purchaseId: purchase.id,
-      status: RefundRequestStatus.Requested,
+      status: RefundRequestStatus.Open,
       reason: parsed.data.reason,
     })
     .returning()
@@ -237,7 +223,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     learnerName: learner.name,
     learnerEmail: learner.email,
     courseTitle: course.title,
-    amount: refundableAmount,
+    amount: purchase.amountPaid,
   });
 
   console.log(`[email] to=${email.to} subject=${email.subject}\n${email.body}`);

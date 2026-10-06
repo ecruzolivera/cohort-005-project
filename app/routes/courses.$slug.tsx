@@ -52,7 +52,6 @@ import { resolveCountry } from "~/lib/country.server";
 import {
   calculatePppPrice,
   getCountryTierInfo,
-  getDiscountForCountry,
 } from "~/lib/ppp";
 import { parseFormData } from "~/lib/validation";
 import { MAX_RATING, MIN_RATING } from "~/lib/ratings";
@@ -370,9 +369,9 @@ function rateCourse(userId: number, courseId: number, rating: number) {
     .get();
 }
 
-const REFUND_REQUEST_WINDOW_DAYS = 14;
-const REFUND_REQUEST_WATCH_LIMIT_SECONDS = 2 * 60 * 60;
-const REFUND_REQUEST_COMPLETION_LIMIT = 0.5;
+const REFUND_WINDOW_DAYS = 14;
+const REFUND_WATCH_LIMIT_SECONDS = 2 * 60 * 60;
+const REFUND_COMPLETION_LIMIT = 0.5;
 
 function getPurchaseForCourse(userId: number, courseId: number) {
   return db
@@ -383,14 +382,14 @@ function getPurchaseForCourse(userId: number, courseId: number) {
     .get();
 }
 
-function getPendingRefundRequest(purchaseId: number) {
+function getOpenRefundRequest(purchaseId: number) {
   return db
     .select({ id: refundRequests.id })
     .from(refundRequests)
     .where(
       and(
         eq(refundRequests.purchaseId, purchaseId),
-        eq(refundRequests.status, RefundRequestStatus.Requested)
+        eq(refundRequests.status, RefundRequestStatus.Open)
       )
     )
     .get();
@@ -444,21 +443,18 @@ function asDayString(when: Date) {
 }
 
 /**
- * The amount and deadline for a refund request, or null if the learner
- * is not eligible to submit one.
+ * What the learner is offered if they want their money back, or null if this
+ * purchase cannot be refunded.
  */
-function getRefundRequestOffer(
-  userId: number,
-  course: { id: number; price: number }
-) {
+function getRefundRequestOffer(userId: number, course: { id: number }) {
   const purchase = getPurchaseForCourse(userId, course.id);
 
   if (!purchase) return null;
-  if (getPendingRefundRequest(purchase.id)) return null;
+  if (getOpenRefundRequest(purchase.id)) return null;
 
   const purchasedDay = asDayString(new Date(purchase.createdAt));
   const windowEnd = new Date(purchase.createdAt);
-  windowEnd.setDate(windowEnd.getDate() + REFUND_REQUEST_WINDOW_DAYS);
+  windowEnd.setDate(windowEnd.getDate() + REFUND_WINDOW_DAYS);
   const lastDayInWindow = asDayString(windowEnd);
   const todayDay = asDayString(new Date());
   const isWithinWindow =
@@ -470,14 +466,12 @@ function getRefundRequestOffer(
 
   if (lessonIds.length > 0) {
     const completedCount = getCompletedLessonCount(userId, lessonIds);
-    if (completedCount / lessonIds.length >= REFUND_REQUEST_COMPLETION_LIMIT) {
+    if (completedCount / lessonIds.length >= REFUND_COMPLETION_LIMIT) {
       return null;
     }
   }
 
-  if (
-    getSecondsWatched(userId, lessonIds) >= REFUND_REQUEST_WATCH_LIMIT_SECONDS
-  ) {
+  if (getSecondsWatched(userId, lessonIds) >= REFUND_WATCH_LIMIT_SECONDS) {
     return null;
   }
 
@@ -491,12 +485,7 @@ function getRefundRequestOffer(
 
   if (claimedSeat) return null;
 
-  // A purchasing-power price is given back at the price that was paid, not at
-  // the list price of the course.
-  const pppDiscount = getDiscountForCountry(purchase.country);
-  const amount = pppDiscount > 0 ? purchase.amountPaid : course.price;
-
-  return { amount, lastDayInWindow };
+  return { amount: purchase.amountPaid, lastDayInWindow };
 }
 
 const ratingSchema = z.object({
@@ -531,17 +520,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let progress = 0;
   let lessonProgressMap: Record<number, string> = {};
   let nextLessonId: number | null = null;
-  let refundRequestOffer: { amount: number; lastDayInWindow: string } | null =
-    null;
+  let refundRequestOffer: { amount: number; lastDayInWindow: string } | null = null;
 
   if (currentUserId) {
     enrolled = isUserEnrolled(currentUserId, course.id);
 
     if (enrolled) {
-      refundRequestOffer = getRefundRequestOffer(currentUserId, {
-        id: course.id,
-        price: courseWithDetails.price,
-      });
+      refundRequestOffer = getRefundRequestOffer(currentUserId, { id: course.id });
 
       progress = calculateProgress(currentUserId, course.id, false);
 
