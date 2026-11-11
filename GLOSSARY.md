@@ -6,19 +6,25 @@ Cadence sells video courses to learners. This glossary covers the language aroun
 
 ### Refunds
 
+**Refund Eligibility**:
+Whether a purchase meets the refund policy at the time its Refund Request is submitted. Later activity and review delays do not change that assessment.
+
+**Refund Exception**:
+A platform Admin's approval despite failed or missing eligibility evidence, supported by an internal reason.
+
 **Refund Request**:
-A learner's ask, with their reason, to get back what they paid for a purchase. The team approves or declines it. One purchase can have several Refund Requests over time, but only one can be undecided at once.
+A learner's ask, with their reason, to get back what they paid for a purchase. A platform Admin approves or declines it. One purchase can have several Refund Requests over time, but only one can be undecided at once.
 _Avoid_: Refund (for the ask itself), Cancellation, Reversal, Chargeback
 
 **Open Refund Request**:
-A Refund Request the team hasn't decided yet.
+A Refund Request a platform Admin hasn't decided yet.
 _Avoid_: Pending, Requested, Awaiting review
 
 **Approved Refund Request**:
-A Refund Request the team has accepted. Approving it is what leads to a Refund.
+A Refund Request a platform Admin has accepted. Approval initiates a Refund.
 
 **Declined Refund Request**:
-A Refund Request the team has turned down. It has no Refund, and the learner may raise a new Refund Request.
+A Refund Request a platform Admin has turned down. It has no Refund, and the learner may raise a new Refund Request.
 
 **Refund**:
 Money returned to a learner after their Refund Request is approved. Approval alone does not confirm that money has been returned. It is always the full amount they paid. A declined Refund Request has no Refund.
